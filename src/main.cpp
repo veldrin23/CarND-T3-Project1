@@ -202,11 +202,8 @@ int main() {
   }
 
 
-  // lane number, starts at 2 (0 is far left)
-  int lane = 1;
 
-  // max speed on highway
-  double max_speed = 49.5;
+
 
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -216,6 +213,14 @@ int main() {
     // The 2 signifies a websocket event
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
+
+  // lane number, starts at 2 (0 is far left)
+  int lane = 1;
+
+  // max speed on highway
+  double max_speed = 49.5;
+
+
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
       auto s = hasData(data);
@@ -261,7 +266,7 @@ int main() {
             // ref x, y and yaw
             double ref_x = car_x;
             double ref_y = car_y;
-            doulbe ref_yaw = deg2rad(car_yaw):
+            double ref_yaw = deg2rad(car_yaw);
 
             // at start, when only have an angle and location
             if (prev_size < 2)
@@ -285,7 +290,8 @@ int main() {
 
               double ref_x_prev = previous_path_x[prev_size - 2];
               double ref_y_prev = previous_path_y[prev_size - 2];
-              ref_yaw = atan2(ref_y - ref_y_prev, ref-x - ref_x_prev);
+
+              ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
 
               ptsx.push_back(ref_x_prev);
               ptsx.push_back(ref_x);
@@ -297,17 +303,17 @@ int main() {
 
 
             // add evently 30m spaced point ahead of starting reference
-            vector<double> next_wp0 = getXY(car_s + 30, 2 + 4* lane, map_waypoints_s, map_waypoints_x. map_waypoints_y);
-            vector<double> next_wp1 = getXY(car_s + 60, 2 + 4* lane, map_waypoints_s, map_waypoints_x. map_waypoints_y);
-            vector<double> next_wp2 = getXY(car_s + 90, 2 + 4* lane, map_waypoints_s, map_waypoints_x. map_waypoints_y);
+            vector<double> next_wp0 = getXY(car_s + 30, 2 + 4* lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp1 = getXY(car_s + 60, 2 + 4* lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> next_wp2 = getXY(car_s + 90, 2 + 4* lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 
             ptsx.push_back(next_wp0[0]);
             ptsx.push_back(next_wp1[0]);
             ptsx.push_back(next_wp2[0]);
 
-            ptsx.push_back(next_wp0[1]);
-            ptsx.push_back(next_wp1[1]);
-            ptsx.push_back(next_wp2[1]);
+            ptsy.push_back(next_wp0[1]);
+            ptsy.push_back(next_wp1[1]);
+            ptsy.push_back(next_wp2[1]);
 
 
             for (int i = 0; i < ptsx.size(); i++)
@@ -317,7 +323,7 @@ int main() {
               double shift_y = ptsy[i] - ref_y;
 
               ptsx[i] = (shift_x * cos(0- ref_yaw) - shift_y * sin(0 - ref_yaw));
-              ptsx[i] = (shift_x * sin(0- ref_yaw) - shift_y * cos(0 - ref_yaw));
+              ptsy[i] = (shift_x * sin(0- ref_yaw) + shift_y * cos(0 - ref_yaw));
 
             }
 
@@ -327,7 +333,7 @@ int main() {
             s.set_points(ptsx, ptsy);
 
             vector<double> next_x_vals;
-            vector<double> next_x_vals;
+            vector<double> next_y_vals;
 
             // populate next vals with remaining pacman dots 
             for (int i = 0; i < prev_size; i++)
@@ -336,11 +342,13 @@ int main() {
               next_y_vals.push_back(previous_path_y[i]);
             }
 
+
             double target_x = 30.0;
             double target_y = s(target_x);
-            double target_dist = sqrt((target_x*target_x) + (target_y)(target_y));
+            double target_dist = sqrt((target_x)*(target_x) + (target_y)*(target_y));
 
             double x_addon = 0;
+            cout << prev_size;
 
             // fill up rest of path planner
             for(int i = 1; i <= 50 - prev_size; i ++)
@@ -356,7 +364,7 @@ int main() {
 
               // rotat back to normal plane
               x_point = (x_ref * cos(ref_yaw) - y_ref*sin(ref_yaw));
-              x_point = (x_ref * sin(ref_yaw) - y_ref*cos(ref_yaw));
+              y_point = (x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw));
 
               x_point += ref_x;
               y_point += ref_y;
