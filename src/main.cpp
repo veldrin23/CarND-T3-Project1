@@ -87,6 +87,90 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
   return closestWaypoint;
 }
 
+
+vector<int> possible_lanes(int current_lane)
+{
+  // function to return valid lanes
+  // function takes current lane and returns a vector of possible lanes
+
+
+  std::vector<int> lanes;
+
+  // can't go left from far left lane
+  if (current_lane == 0)
+    lanes.push_back(1);
+
+  // can't go right from far right lane
+  else if (current_lane == 2)
+    lanes.push_back(1);
+
+  // if in middle, can go either one lane left or one lane right
+  else
+    {
+      lanes.push_back(0);
+      lanes.push_back(2);
+    }
+  return lanes;
+}
+
+
+double super_simple_cost_function(double dist)
+{
+  // cost function which takes into account how much open space there is in the lane
+  return 1-exp(-1/dist);
+}
+
+// lane changer
+int lane_changer(int current_lane, std::vector<bool> lane_safe, std::vector<double> lane_space)
+{
+
+  int new_lane;
+  double cost = 999.0;
+
+  // gets valid lanes
+  vector<int> viable_lanes = possible_lanes(current_lane);
+
+  // action options: stay, one lane left, one lane right
+  std::vector<int> action = {0, -1, 1};
+  int final_action;
+
+  //
+  // print out for sense check ....
+  cout << "current lane: " << current_lane << endl;
+  cout << "lane safe: " << lane_safe[0] << " " << lane_safe[1] << " " << lane_safe[2] << endl;
+  cout << "lane space: " << lane_space[0] << " " << lane_space[1] << " " << lane_space[2] << endl;
+  cout << "viable lanes: ";
+  for (int i = 0; i < viable_lanes.size(); i ++) {
+    cout << viable_lanes[i] << " ";
+  }
+  // end of print
+  //
+
+
+  // iterates over the safe lanes
+  for (int i = 0; i < lane_safe.size(); i++)
+  {
+    // super simple cost score
+    double ssc = super_simple_cost_function(lane_space[i]); 
+    // checks for lowest score, and if target lane is in the viable lanes
+    if ((ssc < cost) & lane_safe[i] & std::find(viable_lanes.begin(), viable_lanes.end(), current_lane + action[i]) != viable_lanes.end())
+      {
+        cost = ssc; 
+        final_action = action[i];
+      }
+  }
+
+  //
+  // more printout for sense check
+  cout << "\nfinal action: " << current_lane + final_action << endl;
+  cout << "\n----\n";
+  // end of print
+  //
+
+  //
+  return current_lane + final_action;
+}
+
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
 vector<double> getFrenet(double x, double y, double theta, const vector<double> &maps_x, const vector<double> &maps_y)
 {
@@ -202,11 +286,16 @@ int main() {
   }
 
 
+  // lane number, starts at 2 (0 is far left)
+  int lane = 1;
+
+  // max speed on highway
+  double max_speed = 48.95;
+  double ref_v = 0.0;  
 
 
 
-
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane, &max_speed, &ref_v](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -214,13 +303,9 @@ int main() {
     //auto sdata = string(data).substr(0, length);
     //cout << sdata << endl;
 
-  // lane number, starts at 2 (0 is far left)
-  int lane = 1;
-
-  // max speed on highway
-  double max_speed = 49.5;
-
-
+  
+    
+    
     if (length && length > 2 && data[0] == '4' && data[1] == '2') {
 
       auto s = hasData(data);
@@ -255,9 +340,105 @@ int main() {
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
 
-          	
+          	if(prev_size > 0){
+              car_s = end_path_s;
+            }
 
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+            bool too_close = false;
+
+            // vectors to pass to lane changer function
+            std::vector<double> lane_space = {999.0, 999.0, 999.0};
+            std::vector<bool> lane_safe = {true, true, true};
+            double left_space;
+            double right_space;
+            double current_space;
+
+
+            
+            // iterates over all vehicles that were detected by sensors
+            for(int i = 0; i < sensor_fusion.size(); i ++) 
+            {
+
+              // check for car in my lane
+              float d = sensor_fusion[i][6];
+              if(d < (2+4*lane+2) && d > (2+4*lane-2))
+              {
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double speed = sqrt(vx*vx + vy*vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                // future location of car 
+                check_car_s += ((double)prev_size*.02*speed);
+                current_space = check_car_s - car_s;
+                // lane_space.push_back(current_space);
+                // check gap between ego car and cars infront
+                if ((check_car_s > car_s) && ((check_car_s - car_s) < 20))
+                {
+                  too_close = true;
+                  lane_safe[0] = true;
+                  lane_space[0] = current_space;
+                }
+            }  
+
+              // check for car in left lane
+              if(d < (4*lane) && d > (4*lane-4))
+              {
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double speed = sqrt(vx*vx + vy*vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                // future location of car 
+                check_car_s += ((double)prev_size*.02*speed);
+                left_space = check_car_s - car_s;  
+
+                // only consider cars ahead of ego car
+                if (left_space > 0)
+                    lane_space[1] = left_space;
+
+                // check gap between ego car and car infront. allow for 5m gap infront of neighbor car   
+                if ((check_car_s + 5 > car_s) && ((check_car_s - car_s < 20)))
+                  lane_safe[1] = false;
+            }  
+
+              // check for car in right lane
+              if(d < (2+4*lane+6) && d > (2+4*lane+2))
+              {
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double speed = sqrt(vx*vx + vy*vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                // future location of car 
+                check_car_s += ((double)prev_size*.02*speed);
+                right_space = check_car_s - car_s;
+
+                // only consider cars ahead of ego car
+                if (right_space > 0) 
+                  lane_space[2] = right_space;
+
+                // check gap between ego car and car infront. allow for 5m gap infront of neighbor car
+                if ((check_car_s + 5 > car_s) && ((check_car_s - car_s < 20)))
+                  lane_safe[2] = false; 
+            } 
+          }
+
+          if(too_close) 
+          {
+            // slow down
+            ref_v -= 1.5;
+            // check for lane change
+            lane = lane_changer(lane, lane_safe, lane_space);
+          }
+
+            // accelerate to speed limit
+          else if(ref_v < max_speed) 
+          {
+            ref_v += 1.5;
+          }
+
+            
 
             // create waypoints
             vector<double> ptsx;
@@ -348,12 +529,13 @@ int main() {
             double target_dist = sqrt((target_x)*(target_x) + (target_y)*(target_y));
 
             double x_addon = 0;
-            cout << prev_size;
+            
+
 
             // fill up rest of path planner
             for(int i = 1; i <= 50 - prev_size; i ++)
             {
-              double N = (target_dist/(.02*max_speed/2.24));
+              double N = (target_dist/(.02*ref_v/2.24));
               double x_point = x_addon+(target_x)/N;
               double y_point = s(x_point);
 
